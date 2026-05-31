@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Prompt 工作台</title>
+  <!-- PWA Manifest (内联) -->
+  <link rel="manifest" href="data:application/manifest+json,{
+    &quot;name&quot;: &quot;Prompt 工作台&quot;,
+    &quot;short_name&quot;: &quot;Prompts&quot;,
+    &quot;start_url&quot;: &quot;.&quot;,
+    &quot;display&quot;: &quot;standalone&quot;,
+    &quot;background_color&quot;: &quot;#f4f5f7&quot;,
+    &quot;theme_color&quot;: &quot;#1a1d23&quot;,
+    &quot;icons&quot;: [{
+      &quot;src&quot;: &quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📋%3C/text%3E%3C/svg%3E&quot;,
+      &quot;sizes&quot;: &quot;100x100&quot;,
+      &quot;type&quot;: &quot;image/svg+xml&quot;
+    }]
+  }">
+  <meta name="theme-color" content="#1a1d23">
+  <style>
+    /* ========== 全局样式 (精简版，保留核心外观) ========== */
+    :root {
+      --bg: #f4f5f7; --card-bg: #fff; --header-bg: #1a1d23; --text-primary: #1a1d2e;
+      --accent: #4a6cf7; --radius: 14px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text-primary); padding-bottom: 70px; }
+    /* 顶栏 */
+    .top-bar {
+      position: fixed; top:0; left:0; right:0; z-index:1000; background: var(--header-bg);
+      color: #fff; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.2); min-height: 52px;
+    }
+    .app-title { font-weight: 700; font-size: 1.2rem; }
+    .view-tabs { display: flex; gap: 8px; }
+    .tab-btn {
+      padding: 6px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.3);
+      background: transparent; color: #ccc; font-size: 0.85rem; cursor: pointer; transition: 0.2s;
+    }
+    .tab-btn.active { background: #fff; color: #1a1d23; border-color: #fff; font-weight: 600; }
+    /* 主内容区 */
+    .main-view { max-width: 860px; margin: 68px auto 20px; padding: 0 12px; display: none; }
+    .main-view.active { display: block; }
+    /* 卡片等沿用之前的设计，此处省略重复样式，保留关键类 */
+    .prompt-card {
+      background: var(--card-bg); border-radius: var(--radius); padding: 18px;
+      margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .card-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+    .module-block { background: #f8f9fb; border: 1px solid #e4e7ed; border-radius: 12px; margin-top: 10px; overflow: hidden; }
+    .module-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; }
+    .module-content { padding: 10px 14px; border-top: 1px solid #e4e7ed; }
+    .prompt-text { font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; background: #fff; padding: 10px; border-radius: 8px; }
+    .btn { padding: 6px 14px; border-radius: 20px; border: none; cursor: pointer; font-size: 0.8rem; background: #edf0f5; }
+    .btn-copy { background: #eef1ff; color: #4a5bc1; }
+    .meta-tags { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.75rem; }
+    .tag { background: #eef1ff; color: #4a5bc1; padding: 2px 10px; border-radius: 12px; }
+    .model { background: #f0fdf4; color: #2d8a4e; padding: 2px 10px; border-radius: 12px; }
+    /* 编辑器样式 */
+    .list-item {
+      display: flex; align-items: center; justify-content: space-between; background: #fff;
+      padding: 12px 16px; border-radius: 12px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .edit-form { background: #fff; padding: 20px; border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { font-weight: 600; display: block; margin-bottom: 6px; }
+    .form-input, .form-textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.9rem; }
+    @media (max-width: 600px) {
+      .top-bar { padding: 8px 12px; }
+      .app-title { font-size: 1rem; }
+      .tab-btn { padding: 5px 12px; font-size: 0.8rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top-bar">
+    <span class="app-title">📋 My Prompts</span>
+    <div class="view-tabs">
+      <button class="tab-btn active" id="tabBrowse">浏览</button>
+      <button class="tab-btn" id="tabEdit">编辑</button>
+    </div>
+  </header>
+
+  <!-- 浏览视图 -->
+  <div class="main-view active" id="browseView">
+    <div style="margin-bottom:12px;">
+      <input type="text" id="searchInput" placeholder="搜索提示词、标签、模型..." style="width:100%; padding:10px; border-radius:24px; border:1px solid #ddd;">
+    </div>
+    <div id="browseContainer"></div>
+    <div id="noResults" style="display:none; text-align:center; padding:30px; color:#888;">🔍 没有找到匹配的提示词</div>
+  </div>
+
+  <!-- 编辑视图 -->
+  <div class="main-view" id="editView">
+    <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+      <button class="btn" id="addNewBtn">＋ 新建提示词</button>
+      <button class="btn" id="exportBtn">📥 导出 JSON</button>
+      <button class="btn" id="importBtn">📤 导入 JSON</button>
+    </div>
+    <input type="file" id="importFile" accept=".json" style="display:none;">
+    <div id="editListContainer"></div>
+    <div id="editFormContainer" style="display:none;"></div>
+  </div>
+
+  <script>
+    (() => {
+      // ========== 数据层 ==========
+      const STORAGE_KEY = 'prompt_workbench_data';
+      let prompts = [];
+
+      function loadData() {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          try { prompts = JSON.parse(stored); } catch(e){ prompts = []; }
+        } else {
+          // 首次加载使用默认示例数据
+          prompts = [
+            { id:'p1', type:'single', title:'代码审查助手', description:'全面审查代码质量、安全性等', modules:[{content:'你是一位资深软件工程师...'}], tags:['编程','代码审查'], models:['GPT-4','Claude 3.5'] },
+            { id:'p2', type:'multi', title:'深度文章写作流程', description:'先大纲后扩写', modules:[{label:'步骤①',content:'规划大纲...'},{label:'步骤②',content:'扩写文章...'}], tags:['写作'], models:['Claude 3.5'] }
+          ];
+          saveData();
+        }
+      }
+      function saveData() { localStorage.setItem(STORAGE_KEY, JSON.stringify(prompts)); }
+
+      // ========== 视图切换 ==========
+      const tabBrowse = document.getElementById('tabBrowse');
+      const tabEdit = document.getElementById('tabEdit');
+      const browseView = document.getElementById('browseView');
+      const editView = document.getElementById('editView');
+
+      tabBrowse.addEventListener('click', ()=>{ setActiveView('browse'); });
+      tabEdit.addEventListener('click', ()=>{ setActiveView('edit'); });
+
+      function setActiveView(view) {
+        tabBrowse.classList.toggle('active', view==='browse');
+        tabEdit.classList.toggle('active', view==='edit');
+        browseView.classList.toggle('active', view==='browse');
+        editView.classList.toggle('active', view==='edit');
+        if (view==='browse') renderBrowse();
+        else renderEditList();
+      }
+
+      // ========== 浏览视图 ==========
+      function renderBrowse() {
+        const container = document.getElementById('browseContainer');
+        const query = document.getElementById('searchInput').value.trim().toLowerCase();
+        container.innerHTML = '';
+        let visible = 0;
+        prompts.forEach(p => {
+          const searchText = (p.title + p.description + p.tags.join(' ') + p.models.join(' ') + p.modules.map(m=>m.content).join(' ')).toLowerCase();
+          if (query && !searchText.includes(query)) return;
+          visible++;
+          const card = document.createElement('div'); card.className = 'prompt-card';
+          card.innerHTML = `
+            <div class="card-title">${escapeHtml(p.title)}</div>
+            <div style="color:#555; font-size:0.9rem;">${escapeHtml(p.description)}</div>
+            ${p.modules.map((m,i) => `
+              <div class="module-block">
+                <div class="module-header">
+                  <span style="font-weight:600;">${m.label || '提示词'}</span>
+                  <button class="btn btn-copy copy-btn" data-content="${escapeHtml(m.content)}">复制</button>
+                </div>
+                <div class="module-content"><pre class="prompt-text">${escapeHtml(m.content)}</pre></div>
+              </div>
+            `).join('')}
+            <div class="meta-tags">
+              ${p.tags.map(t => `<span class="tag">#${escapeHtml(t)}</span>`).join('')}
+              ${p.models.length ? '<span style="margin:0 4px;">|</span>' : ''}
+              ${p.models.map(m => `<span class="model">${escapeHtml(m)}</span>`).join('')}
+            </div>`;
+          container.appendChild(card);
+        });
+        document.getElementById('noResults').style.display = visible ? 'none' : 'block';
+        // 绑定复制事件
+        document.querySelectorAll('.copy-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const content = e.target.getAttribute('data-content');
+            navigator.clipboard.writeText(content).then(() => {
+              const orig = e.target.textContent;
+              e.target.textContent = '已复制!';
+              setTimeout(()=> e.target.textContent = orig, 1500);
+            });
+          });
+        });
+      }
+      document.getElementById('searchInput').addEventListener('input', renderBrowse);
+
+      function escapeHtml(text) {
+        return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      }
+
+      // ========== 编辑视图 ==========
+      function renderEditList() {
+        const container = document.getElementById('editListContainer');
+        document.getElementById('editFormContainer').style.display = 'none';
+        container.innerHTML = '';
+        if (prompts.length===0) {
+          container.innerHTML = '<p style="text-align:center; color:#888;">还没有提示词，点击“新建”开始</p>';
+          return;
+        }
+        prompts.forEach(p => {
+          const div = document.createElement('div'); div.className = 'list-item';
+          div.innerHTML = `
+            <div>
+              <strong>${escapeHtml(p.title)}</strong>
+              <span style="margin-left:10px; font-size:0.8rem; color:#888;">${p.type==='single'?'单步':'分步'} | ${p.modules.length}模块</span>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn edit-item" data-id="${p.id}">编辑</button>
+              <button class="btn del-item" data-id="${p.id}" style="color:#d32f2f;">删除</button>
+            </div>`;
+          container.appendChild(div);
+        });
+        document.querySelectorAll('.edit-item').forEach(b => b.addEventListener('click', (e) => {
+          const id = e.target.dataset.id;
+          const p = prompts.find(x => x.id === id);
+          if(p) showEditForm(p);
+        }));
+        document.querySelectorAll('.del-item').forEach(b => b.addEventListener('click', (e) => {
+          if(confirm('确定删除？')) {
+            prompts = prompts.filter(x => x.id !== e.target.dataset.id);
+            saveData(); renderEditList(); renderBrowse();
+          }
+        }));
+      }
+
+      function showEditForm(promptData = null) {
+        const isNew = !promptData;
+        const data = promptData ? JSON.parse(JSON.stringify(promptData)) : { id: Date.now().toString(36), type:'single', title:'', description:'', modules:[{content:''}], tags:[], models:[] };
+        const container = document.getElementById('editFormContainer');
+        container.style.display = 'block';
+        container.innerHTML = `
+          <div class="edit-form">
+            <h3>${isNew ? '新建' : '编辑'}提示词</h3>
+            <div class="form-group"><label>标题</label><input class="form-input" id="efTitle" value="${escapeHtml(data.title)}"></div>
+            <div class="form-group"><label>简介</label><textarea class="form-textarea" id="efDesc">${escapeHtml(data.description)}</textarea></div>
+            <div class="form-group">
+              <label>类型</label>
+              <select class="form-input" id="efType">
+                <option value="single" ${data.type==='single'?'selected':''}>单步提示词</option>
+                <option value="multi" ${data.type==='multi'?'selected':''}>分步提示词</option>
+              </select>
+            </div>
+            <div class="form-group"><label>标签 (逗号分隔)</label><input class="form-input" id="efTags" value="${data.tags.join(', ')}"></div>
+            <div class="form-group"><label>推荐模型 (逗号分隔)</label><input class="form-input" id="efModels" value="${data.models.join(', ')}"></div>
+            <div class="form-group">
+              <label>模块 <button class="btn" id="addModuleBtn" style="margin-left:10px;">＋ 添加模块</button></label>
+              <div id="modulesEditor"></div>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+              <button class="btn" id="cancelEdit">取消</button>
+              <button class="btn" style="background:#4a6cf7; color:#fff;" id="saveEdit">保存</button>
+            </div>
+          </div>`;
+        const modulesEditor = document.getElementById('modulesEditor');
+        function renderModules() {
+          modulesEditor.innerHTML = '';
+          data.modules.forEach((mod, i) => {
+            const div = document.createElement('div');
+            div.style.cssText = 'background:#f8f9fb; border:1px solid #ddd; border-radius:8px; padding:10px; margin-bottom:8px;';
+            div.innerHTML = `
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span>模块 ${i+1}</span>
+                ${data.modules.length>1 ? `<button class="btn remove-module" data-index="${i}" style="color:#d32f2f;">移除</button>` : ''}
+              </div>
+              ${data.type==='multi' ? `<input class="form-input module-label" value="${escapeHtml(mod.label||'')}" placeholder="模块标签 (如：步骤①)" style="margin-bottom:6px;">` : ''}
+              <textarea class="form-textarea module-content" style="min-height:60px;">${escapeHtml(mod.content)}</textarea>`;
+            modulesEditor.appendChild(div);
+          });
+          document.querySelectorAll('.remove-module').forEach(b => b.addEventListener('click', (e) => {
+            data.modules.splice(parseInt(e.target.dataset.index), 1);
+            renderModules();
+          }));
+        }
+        renderModules();
+        document.getElementById('addModuleBtn').addEventListener('click', ()=>{
+          data.modules.push({label:'', content:''});
+          renderModules();
+        });
+        document.getElementById('cancelEdit').addEventListener('click', ()=>{
+          container.style.display = 'none';
+          renderEditList();
+        });
+        document.getElementById('saveEdit').addEventListener('click', ()=>{
+          data.title = document.getElementById('efTitle').value.trim();
+          if(!data.title) { alert('标题必填'); return; }
+          data.description = document.getElementById('efDesc').value.trim();
+          data.type = document.getElementById('efType').value;
+          data.tags = document.getElementById('efTags').value.split(',').map(s=>s.trim()).filter(s=>s);
+          data.models = document.getElementById('efModels').value.split(',').map(s=>s.trim()).filter(s=>s);
+          const moduleContents = modulesEditor.querySelectorAll('.module-content');
+          const moduleLabels = modulesEditor.querySelectorAll('.module-label');
+          data.modules = [];
+          for(let i=0; i<moduleContents.length; i++) {
+            const content = moduleContents[i].value.trim();
+            if(!content) { alert(`模块${i+1}内容不能为空`); return; }
+            const label = moduleLabels[i] ? moduleLabels[i].value.trim() : undefined;
+            data.modules.push({ label: label || undefined, content });
+          }
+          if(isNew) { prompts.push(data); }
+          else { const idx = prompts.findIndex(p=>p.id===data.id); if(idx!==-1) prompts[idx] = data; }
+          saveData();
+          container.style.display = 'none';
+          renderEditList();
+          renderBrowse();
+        });
+        document.getElementById('efType').addEventListener('change', (e) => {
+          data.type = e.target.value;
+          renderModules(); // 重新渲染以显示/隐藏标签输入
+        });
+      }
+
+      document.getElementById('addNewBtn').addEventListener('click', ()=> showEditForm(null));
+      document.getElementById('exportBtn').addEventListener('click', ()=>{
+        const blob = new Blob([JSON.stringify(prompts, null, 2)], {type:'application/json'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = `prompts_backup_${new Date().toISOString().slice(0,10)}.json`; a.click();
+      });
+      document.getElementById('importBtn').addEventListener('click', ()=> document.getElementById('importFile').click());
+      document.getElementById('importFile').addEventListener('change', (e)=>{
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const imported = JSON.parse(ev.target.result);
+            if(!Array.isArray(imported)) throw new Error('格式错误');
+            if(confirm('导入将覆盖当前数据，继续？')) {
+              prompts = imported; saveData(); renderEditList(); renderBrowse();
+            }
+          } catch(ex) { alert('导入失败：JSON 格式不正确'); }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+      });
+
+      // ========== 注册 Service Worker (离线支持) ==========
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register("data:application/javascript," + encodeURIComponent(
+            "self.addEventListener('fetch', e => { e.respondWith(fetch(e.request).catch(() => caches.match(e.request))); }); self.addEventListener('install', () => self.skipWaiting());"
+          )).catch(() => {}); // 使用内联 SW 仅用于基本离线回退，实际推荐外部文件
+        });
+      }
+
+      // ========== 启动 ==========
+      loadData();
+      renderBrowse();
+      // 默认激活浏览视图
+    })();
+  </script>
+</body>
+</html>
